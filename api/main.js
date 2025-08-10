@@ -1,8 +1,6 @@
 import express from "express";
-import fs from "fs";
 import fetch from "node-fetch";
 import jwt from "jsonwebtoken";
-import path from "path";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -10,14 +8,15 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-const __dirname = path.resolve();
-const tokenFilePath = path.join(__dirname, "token.json");
-
 const private_key = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
 const project_id = process.env.PROJECT_ID;
 const client_email = process.env.CLIENT_EMAIL;
 const token_uri = "https://oauth2.googleapis.com/token";
 const scope = "https://www.googleapis.com/auth/cloud-platform";
+
+// Cache simples em memória para token
+let cachedToken = null;
+let tokenExpiresAt = 0;
 
 // Gerar token de acesso
 async function generateAccessToken() {
@@ -54,32 +53,21 @@ async function generateAccessToken() {
   };
 }
 
-// Carregar token salvo se válido
-function loadToken(filePath) {
-  if (!fs.existsSync(filePath)) return null;
-  const tokenData = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  if (!tokenData.access_token || !tokenData.expires_at) return null;
-  if (tokenData.expires_at > Date.now()) return tokenData.access_token;
-  return null;
-}
-
-// Salvar token
-function saveToken(filePath, accessToken, expiresAt) {
-  fs.writeFileSync(
-    filePath,
-    JSON.stringify({ access_token: accessToken, expires_at: expiresAt })
-  );
+// Obter token válido (do cache ou novo)
+async function getAccessToken() {
+  if (cachedToken && tokenExpiresAt > Date.now()) {
+    return cachedToken;
+  }
+  const tokenData = await generateAccessToken();
+  cachedToken = tokenData.access_token;
+  tokenExpiresAt = tokenData.expires_at;
+  return cachedToken;
 }
 
 // Rota principal
 app.post("/", async (req, res) => {
   try {
-    let serverKey = loadToken(tokenFilePath);
-    if (!serverKey) {
-      const tokenData = await generateAccessToken();
-      serverKey = tokenData.access_token;
-      saveToken(tokenFilePath, serverKey, tokenData.expires_at);
-    }
+    const serverKey = await getAccessToken();
 
     const { titulo, body, som, canal, imageUrl } = req.body;
     if (!titulo || !body || !som || !canal) {
