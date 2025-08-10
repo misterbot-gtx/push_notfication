@@ -1,0 +1,30 @@
+{
+  "name": "backendpush",
+  "version": "1.0.0",
+  "description": "Servidor Node.js para envio de notificações FCM com autenticação via JWT usando credenciais do .env",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "nodemon main.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "keywords": [
+    "fcm",
+    "push",
+    "firebase",
+    "jwt",
+    "nodejs",
+    "notifications"
+  ],
+  "author": "Heisenberg",
+  "license": "MIT"
+}
