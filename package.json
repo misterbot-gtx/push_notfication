@@ -2,11 +2,11 @@
   "name": "backendpush",
   "version": "1.0.0",
   "description": "Servidor Node.js para envio de notificações FCM com autenticação via JWT usando credenciais do .env",
-  "main": "main.js",
+  "main": "api/main.js",
   "type": "module",
   "scripts": {
-    "start": "node main.js",
-    "dev": "nodemon main.js"
+    "start": "node api/main.js",
+    "dev": "nodemon api/main.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
