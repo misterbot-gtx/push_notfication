@@ -16,8 +16,8 @@ const tokenFilePath = path.join(__dirname, "token.json");
 const private_key = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
 const project_id = process.env.PROJECT_ID;
 const client_email = process.env.CLIENT_EMAIL;
-const token_uri = process.env.TOKEN_URI;
-const scope = process.env.SCOPE || "https://www.googleapis.com/auth/cloud-platform";
+const token_uri = "https://oauth2.googleapis.com/token";
+const scope = "https://www.googleapis.com/auth/cloud-platform";
 
 // Gerar token de acesso
 async function generateAccessToken() {

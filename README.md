@@ -13,7 +13,7 @@ A autenticação é feita com **JWT** usando credenciais definidas no arquivo `.
 - Cacheia o token em `token.json` para evitar múltiplas requisições de autenticação.
 - Recebe requisições POST contendo os dados da notificação (título, corpo, som, canal, imagem opcional).
 - Envia notificações para dispositivos Android e iOS.
-- Configurações sensíveis via `.env` (sem necessidade de `push_api.json`).
+- Configurações sensíveis via `.env`.
 
 ---
 
@@ -39,8 +39,6 @@ fcm-push-server/
 PRIVATE\_KEY="-----BEGIN PRIVATE KEY-----\nSEU\_CONTEUDO\_AQUI\n-----END PRIVATE KEY-----\n"
 PROJECT\_ID="seu-project-id"
 CLIENT\_EMAIL="firebase-adminsdk@seu-project-id.iam.gserviceaccount.com"
-TOKEN\_URI="https://oauth2.googleapis.com/token"
-SCOPE="https://www.googleapis.com/auth/cloud-platform"
 PORT=3000
  ```
 <br>
