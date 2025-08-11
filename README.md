@@ -7,6 +7,9 @@ A autenticação é feita com **JWT** usando credenciais definidas no arquivo `.
   <img src="./preview.png" alt="Pushcut Preview" width="800"/>
 </p>
 
+🎥 **Vídeo de demonstração:**
+[Assista no TikTok](https://www.tiktok.com/@mr.robots777/video/7537375102602644742)
+
 ## 📌 Funcionalidade
 
 - Gera automaticamente o token de acesso para a API do FCM usando as credenciais do serviço.
