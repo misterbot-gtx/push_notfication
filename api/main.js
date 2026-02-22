@@ -130,6 +130,24 @@ async function getFcmTokensByUserId(userId) {
     .filter(Boolean);
 }
 
+async function getFcmTokensByRobotId(robotId) {
+  const base = getSupabaseBaseUrl();
+  const url = new URL(`${base}/rest/v1/user_push_tokens`);
+  url.searchParams.set("select", "fcm_token");
+  url.searchParams.set("robot_id", `eq.${robotId}`);
+
+  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
+  if (!r.ok) {
+    throw new Error(
+      `Erro ao buscar tokens por robot_id no Supabase: ${await r.text()}`
+    );
+  }
+  const rows = await r.json();
+  return (rows || [])
+    .map((x) => (x?.fcm_token || "").trim())
+    .filter(Boolean);
+}
+
 async function deleteFcmToken(token) {
   const base = getSupabaseBaseUrl();
   const url = new URL(`${base}/rest/v1/user_push_tokens`);
@@ -260,18 +278,25 @@ app.post("/", async (req, res) => {
     const targetTokens = [];
 
     if (isRobotId(auth)) {
-      const userId = await getUserIdByRobotId(auth);
-      if (!userId) {
-        return res.status(404).json({
-          error:
-            "Robot ID não encontrado. Verifique se o app já salvou o robot_id e registrou o token no Supabase.",
-        });
+      const tokensByRobotId = await getFcmTokensByRobotId(auth);
+      if (tokensByRobotId.length) {
+        targetTokens.push(...tokensByRobotId);
+      } else {
+        const userId = await getUserIdByRobotId(auth);
+        if (!userId) {
+          return res.status(404).json({
+            error:
+              "Robot ID não encontrado. Verifique se o app já salvou o robot_id e registrou o token no Supabase.",
+          });
+        }
+        const tokens = await getFcmTokensByUserId(userId);
+        if (!tokens.length) {
+          return res
+            .status(404)
+            .json({ error: "Nenhum token registrado para este usuário." });
+        }
+        targetTokens.push(...tokens);
       }
-      const tokens = await getFcmTokensByUserId(userId);
-      if (!tokens.length) {
-        return res.status(404).json({ error: "Nenhum token registrado para este usuário." });
-      }
-      targetTokens.push(...tokens);
     } else {
       targetTokens.push(auth);
     }
