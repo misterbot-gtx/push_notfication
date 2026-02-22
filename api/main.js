@@ -343,6 +343,7 @@ app.post("/", async (req, res) => {
           image: image || undefined,
         },
         android: {
+          priority: "HIGH",
           notification: {
             sound: som,
             channel_id: canal,
@@ -351,6 +352,9 @@ app.post("/", async (req, res) => {
           },
         },
         apns: {
+          headers: {
+            "apns-priority": "10",
+          },
           payload: {
             aps: {
               sound: `${som}.caf`,
