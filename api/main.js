@@ -59,11 +59,45 @@ function supabaseHeaders() {
       "Supabase não configurado no servidor. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
     );
   }
+  const role = getSupabaseKeyRole();
+  if (role && role !== "service_role") {
+    throw new Error(
+      `SUPABASE_SERVICE_ROLE_KEY inválida (role=${role}). Use a chave service_role do projeto Supabase.`
+    );
+  }
   return {
     apikey: supabase_service_role_key,
     Authorization: `Bearer ${supabase_service_role_key}`,
     "Content-Type": "application/json",
   };
+}
+
+function decodeJwtPayload(token) {
+  const t = (token || "").trim();
+  const parts = t.split(".");
+  if (parts.length < 2) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = Buffer.from(b64, "base64").toString("utf8");
+    return JSON.parse(json);
+  } catch (_) {
+    return null;
+  }
+}
+
+function getSupabaseKeyRole() {
+  const payload = decodeJwtPayload(supabase_service_role_key);
+  return payload?.role || null;
+}
+
+function getSupabaseKeyRef() {
+  const payload = decodeJwtPayload(supabase_service_role_key);
+  return payload?.ref || null;
+}
+
+function getSupabaseKeyIss() {
+  const payload = decodeJwtPayload(supabase_service_role_key);
+  return payload?.iss || null;
 }
 
 function getSupabaseBaseUrl() {
@@ -96,6 +130,9 @@ app.get("/health", (req, res) => {
     project_id: project_id || null,
     supabase_host: getSupabaseHost(),
     has_supabase_service_role_key: Boolean(supabase_service_role_key),
+    supabase_key_role: getSupabaseKeyRole(),
+    supabase_key_ref: getSupabaseKeyRef(),
+    supabase_key_iss: getSupabaseKeyIss(),
   });
 });
 
