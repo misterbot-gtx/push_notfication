@@ -92,7 +92,26 @@ async function getUserIdByRobotId(robotId) {
     throw new Error(`Erro ao buscar robot_id no Supabase: ${await r.text()}`);
   }
   const rows = await r.json();
-  return rows?.[0]?.id ?? null;
+  const fromProfiles = rows?.[0]?.id ?? null;
+  if (fromProfiles) return fromProfiles;
+  return await getUserIdByRobotIdFromTokens(robotId);
+}
+
+async function getUserIdByRobotIdFromTokens(robotId) {
+  const base = getSupabaseBaseUrl();
+  const url = new URL(`${base}/rest/v1/user_push_tokens`);
+  url.searchParams.set("select", "user_id");
+  url.searchParams.set("robot_id", `eq.${robotId}`);
+  url.searchParams.set("limit", "1");
+
+  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
+  if (!r.ok) {
+    throw new Error(
+      `Erro ao buscar robot_id (tokens) no Supabase: ${await r.text()}`
+    );
+  }
+  const rows = await r.json();
+  return rows?.[0]?.user_id ?? null;
 }
 
 async function getFcmTokensByUserId(userId) {
@@ -243,7 +262,10 @@ app.post("/", async (req, res) => {
     if (isRobotId(auth)) {
       const userId = await getUserIdByRobotId(auth);
       if (!userId) {
-        return res.status(404).json({ error: "Robot ID não encontrado." });
+        return res.status(404).json({
+          error:
+            "Robot ID não encontrado. Verifique se o app já salvou o robot_id e registrou o token no Supabase.",
+        });
       }
       const tokens = await getFcmTokensByUserId(userId);
       if (!tokens.length) {
