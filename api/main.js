@@ -102,7 +102,7 @@ app.get("/health", (req, res) => {
 async function getUserIdByRobotId(robotId) {
   const base = getSupabaseBaseUrl();
   const url = new URL(`${base}/rest/v1/user_profiles`);
-  url.searchParams.set("select", "id");
+  url.searchParams.set("select", "id,fcm_token");
   url.searchParams.set("robot_id", `eq.${robotId}`);
   url.searchParams.set("limit", "1");
 
@@ -114,6 +114,24 @@ async function getUserIdByRobotId(robotId) {
   const fromProfiles = rows?.[0]?.id ?? null;
   if (fromProfiles) return fromProfiles;
   return await getUserIdByRobotIdFromTokens(robotId);
+}
+
+async function getProfileTokenByRobotId(robotId) {
+  const base = getSupabaseBaseUrl();
+  const url = new URL(`${base}/rest/v1/user_profiles`);
+  url.searchParams.set("select", "fcm_token");
+  url.searchParams.set("robot_id", `eq.${robotId}`);
+  url.searchParams.set("limit", "1");
+
+  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
+  if (!r.ok) {
+    throw new Error(
+      `Erro ao buscar token (profile) no Supabase: ${await r.text()}`
+    );
+  }
+  const rows = await r.json();
+  const token = (rows?.[0]?.fcm_token || "").trim();
+  return token || null;
 }
 
 async function getUserIdByRobotIdFromTokens(robotId) {
@@ -297,10 +315,21 @@ app.post("/", async (req, res) => {
     const targetTokens = [];
 
     if (isRobotId(auth)) {
+      const profileToken = await getProfileTokenByRobotId(auth);
+      if (profileToken) {
+        targetTokens.push(profileToken);
+      }
+
       const tokensByRobotId = await getFcmTokensByRobotId(auth);
       if (tokensByRobotId.length) {
         targetTokens.push(...tokensByRobotId);
-      } else {
+      }
+
+      const unique = Array.from(new Set(targetTokens));
+      targetTokens.length = 0;
+      targetTokens.push(...unique);
+
+      if (!targetTokens.length) {
         const userId = await getUserIdByRobotId(auth);
         if (!userId) {
           return res.status(404).json({
