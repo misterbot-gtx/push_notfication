@@ -51,8 +51,25 @@ function supabaseHeaders() {
   };
 }
 
+function getSupabaseBaseUrl() {
+  if (!supabase_url) {
+    throw new Error(
+      "Supabase não configurado no servidor. Defina SUPABASE_URL."
+    );
+  }
+  try {
+    const u = new URL(supabase_url);
+    return u.toString().replace(/\/+$/, "");
+  } catch (_) {
+    throw new Error(
+      "SUPABASE_URL inválida. Use o formato https://SEU-PROJETO.supabase.co"
+    );
+  }
+}
+
 async function getUserIdByRobotId(robotId) {
-  const url = new URL(`${supabase_url}/rest/v1/user_profiles`);
+  const base = getSupabaseBaseUrl();
+  const url = new URL(`${base}/rest/v1/user_profiles`);
   url.searchParams.set("select", "id");
   url.searchParams.set("robot_id", `eq.${robotId}`);
   url.searchParams.set("limit", "1");
@@ -66,7 +83,8 @@ async function getUserIdByRobotId(robotId) {
 }
 
 async function getFcmTokensByUserId(userId) {
-  const url = new URL(`${supabase_url}/rest/v1/user_push_tokens`);
+  const base = getSupabaseBaseUrl();
+  const url = new URL(`${base}/rest/v1/user_push_tokens`);
   url.searchParams.set("select", "fcm_token");
   url.searchParams.set("user_id", `eq.${userId}`);
 
@@ -81,7 +99,8 @@ async function getFcmTokensByUserId(userId) {
 }
 
 async function deleteFcmToken(token) {
-  const url = new URL(`${supabase_url}/rest/v1/user_push_tokens`);
+  const base = getSupabaseBaseUrl();
+  const url = new URL(`${base}/rest/v1/user_push_tokens`);
   url.searchParams.set("fcm_token", `eq.${token}`);
 
   await fetch(url.toString(), {
