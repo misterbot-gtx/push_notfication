@@ -10,12 +10,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const envServerPath = path.join(__dirname, ".env.server");
 const envDefaultPath = path.join(__dirname, ".env");
+const envRootPath = path.resolve(__dirname, "..", ".env");
 dotenv.config({
   path: process.env.DOTENV_CONFIG_PATH
     ? process.env.DOTENV_CONFIG_PATH
     : fs.existsSync(envServerPath)
       ? envServerPath
-      : envDefaultPath,
+      : fs.existsSync(envDefaultPath)
+        ? envDefaultPath
+        : fs.existsSync(envRootPath)
+          ? envRootPath
+          : undefined,
 });
 
 const app = express();
@@ -53,18 +58,55 @@ function sanitizeImageUrl(value) {
   return v.replace(/`/g, "").trim();
 }
 
+function getSupabaseKeyType() {
+  const k = (supabase_service_role_key || "").trim();
+  if (!k) return null;
+  if (k.startsWith("sb_publishable_")) return "publishable";
+  if (k.startsWith("sb_secret_")) return "secret";
+  if (k.split(".").length >= 3) return "jwt";
+  return "unknown";
+}
+
+function assertSupabaseServerKey() {
+  const k = (supabase_service_role_key || "").trim();
+  const type = getSupabaseKeyType();
+  if (!k) {
+    throw new Error(
+      "Supabase não configurado no servidor. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+  if (type === "publishable") {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY inválida (publishable). Use a chave secret/service_role do projeto Supabase."
+    );
+  }
+  if (type === "secret") return;
+  if (type === "jwt") {
+    const role = getSupabaseKeyRole();
+    if (!role) {
+      throw new Error(
+        "SUPABASE_SERVICE_ROLE_KEY inválida. Use a chave secret/service_role do projeto Supabase."
+      );
+    }
+    if (role !== "service_role") {
+      throw new Error(
+        `SUPABASE_SERVICE_ROLE_KEY inválida (role=${role}). Use a chave service_role do projeto Supabase.`
+      );
+    }
+    return;
+  }
+  throw new Error(
+    "SUPABASE_SERVICE_ROLE_KEY inválida. Use a chave secret/service_role do projeto Supabase."
+  );
+}
+
 function supabaseHeaders() {
   if (!supabase_url || !supabase_service_role_key) {
     throw new Error(
       "Supabase não configurado no servidor. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
     );
   }
-  const role = getSupabaseKeyRole();
-  if (role && role !== "service_role") {
-    throw new Error(
-      `SUPABASE_SERVICE_ROLE_KEY inválida (role=${role}). Use a chave service_role do projeto Supabase.`
-    );
-  }
+  assertSupabaseServerKey();
   return {
     apikey: supabase_service_role_key,
     Authorization: `Bearer ${supabase_service_role_key}`,
@@ -130,6 +172,7 @@ app.get("/health", (req, res) => {
     project_id: project_id || null,
     supabase_host: getSupabaseHost(),
     has_supabase_service_role_key: Boolean(supabase_service_role_key),
+    supabase_key_type: getSupabaseKeyType(),
     supabase_key_role: getSupabaseKeyRole(),
     supabase_key_ref: getSupabaseKeyRef(),
     supabase_key_iss: getSupabaseKeyIss(),
@@ -315,7 +358,7 @@ app.post("/", async (req, res) => {
         return res.status(404).json({
           error:
             userId == null
-              ? "Robot ID não encontrado. Verifique se o robot_id existe no user_profiles."
+              ? "Robot ID não encontrado (ou sem permissão/RLS). Verifique o robot_id no user_profiles e a chave SUPABASE_SERVICE_ROLE_KEY."
               : "Nenhum token registrado para este usuário.",
           debug: {
             supabase_host: getSupabaseHost(),
