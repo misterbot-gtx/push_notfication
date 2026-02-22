@@ -8,18 +8,104 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-const private_key = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
+const private_key = (process.env.PRIVATE_KEY || "").replace(/\\n/g, "\n");
 const project_id = process.env.PROJECT_ID;
 const client_email = process.env.CLIENT_EMAIL;
 const token_uri = "https://oauth2.googleapis.com/token";
 const scope = "https://www.googleapis.com/auth/cloud-platform";
 
+const supabase_url = process.env.SUPABASE_URL;
+const supabase_service_role_key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
 // Cache simples em memória para token
 let cachedToken = null;
 let tokenExpiresAt = 0;
 
+function parseAuthorizationHeader(value) {
+  const v = (value || "").trim();
+  if (!v) return null;
+  if (v.toLowerCase().startsWith("bearer ")) return v.slice(7).trim();
+  return v;
+}
+
+function isRobotId(value) {
+  return typeof value === "string" && value.startsWith("robot-");
+}
+
+function sanitizeImageUrl(value) {
+  const v = (value || "").trim();
+  if (!v) return null;
+  return v.replace(/`/g, "").trim();
+}
+
+function supabaseHeaders() {
+  if (!supabase_url || !supabase_service_role_key) {
+    throw new Error(
+      "Supabase não configurado no servidor. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+  return {
+    apikey: supabase_service_role_key,
+    Authorization: `Bearer ${supabase_service_role_key}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function getUserIdByRobotId(robotId) {
+  const url = new URL(`${supabase_url}/rest/v1/user_profiles`);
+  url.searchParams.set("select", "id");
+  url.searchParams.set("robot_id", `eq.${robotId}`);
+  url.searchParams.set("limit", "1");
+
+  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
+  if (!r.ok) {
+    throw new Error(`Erro ao buscar robot_id no Supabase: ${await r.text()}`);
+  }
+  const rows = await r.json();
+  return rows?.[0]?.id ?? null;
+}
+
+async function getFcmTokensByUserId(userId) {
+  const url = new URL(`${supabase_url}/rest/v1/user_push_tokens`);
+  url.searchParams.set("select", "fcm_token");
+  url.searchParams.set("user_id", `eq.${userId}`);
+
+  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
+  if (!r.ok) {
+    throw new Error(`Erro ao buscar tokens no Supabase: ${await r.text()}`);
+  }
+  const rows = await r.json();
+  return (rows || [])
+    .map((x) => (x?.fcm_token || "").trim())
+    .filter(Boolean);
+}
+
+async function deleteFcmToken(token) {
+  const url = new URL(`${supabase_url}/rest/v1/user_push_tokens`);
+  url.searchParams.set("fcm_token", `eq.${token}`);
+
+  await fetch(url.toString(), {
+    method: "DELETE",
+    headers: supabaseHeaders(),
+  });
+}
+
+function isUnregisteredFcmError(bodyText) {
+  const t = (bodyText || "").toString();
+  return (
+    t.includes('"errorCode": "UNREGISTERED"') ||
+    t.includes("NotRegistered") ||
+    t.includes("UNREGISTERED")
+  );
+}
+
 // Gerar token de acesso
 async function generateAccessToken() {
+  if (!private_key || !client_email || !project_id) {
+    throw new Error(
+      "Credenciais do Firebase ausentes. Defina PRIVATE_KEY, CLIENT_EMAIL e PROJECT_ID."
+    );
+  }
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + 3600;
 
@@ -77,24 +163,25 @@ app.post("/", async (req, res) => {
       });
     }
 
-    const deviceToken = req.headers["authorization"];
-    if (!deviceToken) {
+    const auth = parseAuthorizationHeader(req.headers["authorization"]);
+    if (!auth) {
       return res.status(401).json({ error: "Token de autorização ausente." });
     }
 
-    const notificationPayload = {
+    const image = sanitizeImageUrl(imageUrl);
+
+    const baseMessage = {
       message: {
-        token: deviceToken.trim(),
         notification: {
           title: titulo,
-          body: body,
-          image: imageUrl || undefined,
+          body,
+          image: image || undefined,
         },
         android: {
           notification: {
             sound: som,
             channel_id: canal,
-            image: imageUrl || undefined,
+            image: image || undefined,
             icon: "ic_shortcut_icone",
           },
         },
@@ -106,41 +193,94 @@ app.post("/", async (req, res) => {
             },
           },
           fcm_options: {
-            image: imageUrl || undefined,
+            image: image || undefined,
           },
         },
         data: {
-          key1: "valor1",
-          key2: "valor2",
+          title: titulo,
+          body,
+          som,
+          canal,
+          ...(image ? { image } : {}),
         },
       },
     };
 
-    const fcmRes = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${project_id}/messages:send`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${serverKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(notificationPayload),
+    const targetTokens = [];
+
+    if (isRobotId(auth)) {
+      const userId = await getUserIdByRobotId(auth);
+      if (!userId) {
+        return res.status(404).json({ error: "Robot ID não encontrado." });
       }
+      const tokens = await getFcmTokensByUserId(userId);
+      if (!tokens.length) {
+        return res.status(404).json({ error: "Nenhum token registrado para este usuário." });
+      }
+      targetTokens.push(...tokens);
+    } else {
+      targetTokens.push(auth);
+    }
+
+    const sendUrl = `https://fcm.googleapis.com/v1/projects/${project_id}/messages:send`;
+    const headers = {
+      Authorization: `Bearer ${serverKey}`,
+      "Content-Type": "application/json",
+    };
+
+    const results = await Promise.all(
+      targetTokens.map(async (token) => {
+        const payload = {
+          ...baseMessage,
+          message: {
+            ...baseMessage.message,
+            token,
+          },
+        };
+
+        const r = await fetch(sendUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+
+        const text = await r.text();
+        if (!r.ok && isUnregisteredFcmError(text)) {
+          try {
+            await deleteFcmToken(token);
+          } catch (_) {}
+        }
+
+        return {
+          ok: r.ok,
+          status: r.status,
+          response: text,
+        };
+      })
     );
 
-    if (fcmRes.ok) {
+    const okCount = results.filter((x) => x.ok).length;
+    const failCount = results.length - okCount;
+
+    if (failCount === 0) {
       return res.json({
         success: "200",
+        sent: okCount,
         response: "Notificação enviada com sucesso.",
       });
-    } else {
-      const errorText = await fcmRes.text();
-      return res.status(500).json({
-        error: "Falha ao enviar notificação.",
-        http_code: fcmRes.status,
-        response: errorText || "Token Fornecido incorreto",
-      });
     }
+
+    return res.status(207).json({
+      error: "Falha parcial ao enviar notificação.",
+      sent: okCount,
+      failed: failCount,
+      results: results.map((r, i) => ({
+        index: i,
+        ok: r.ok,
+        http_code: r.status,
+        response: r.response,
+      })),
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
