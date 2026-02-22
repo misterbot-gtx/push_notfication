@@ -384,12 +384,8 @@ app.post("/", async (req, res) => {
         return res.status(404).json({
           error:
             userId == null
-              ? "Robot ID não encontrado (ou sem permissão/RLS). Verifique o robot_id no user_profiles e a chave SUPABASE_SERVICE_ROLE_KEY."
+              ? "Robot ID não encontrado"
               : "Nenhum token registrado para este usuário.",
-          debug: {
-            supabase_host: getSupabaseHost(),
-            robot_id: auth,
-          },
         });
       }
     } else {
