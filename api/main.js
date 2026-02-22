@@ -67,6 +67,15 @@ function sanitizeImageUrl(value) {
   return v.replace(/`/g, "").trim();
 }
 
+function resolveChannelIdBySound(sound) {
+  const s = (sound || "").toString().trim();
+  if (!s) return null;
+  if (s === "venda") return "heisencut_venda";
+  if (s === "contact") return "heisencut_contact";
+  if (s === "newclient") return "heisencut_newclient";
+  return null;
+}
+
 function getSupabaseKeyType() {
   const k = (supabase_service_role_key || "").trim();
   if (!k) return null;
@@ -303,11 +312,19 @@ app.post("/", async (req, res) => {
   try {
     const serverKey = await getAccessToken();
 
-    const { titulo, body, som, canal, imageUrl } = req.body;
-    if (!titulo || !body || !som || !canal) {
+    const { titulo, body, som, imageUrl } = req.body;
+    if (!titulo || !body || !som) {
       return res.status(400).json({
         error:
-          'Os campos "titulo", "body", "som" e "canal" são obrigatórios e "imageUrl" caso queira colocar uma imagem.',
+          'Os campos "titulo", "body" e "som" são obrigatórios e "imageUrl" caso queira colocar uma imagem.',
+      });
+    }
+
+    const canal = resolveChannelIdBySound(som);
+    if (!canal) {
+      return res.status(400).json({
+        error:
+          'Som inválido. Use "newclient", "contact" ou "venda" para definir o canal automaticamente.',
       });
     }
 
