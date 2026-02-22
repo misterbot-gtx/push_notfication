@@ -25,6 +25,15 @@ dotenv.config({
 
 const app = express();
 app.use(express.json());
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({
+      error: "JSON inválido no corpo da requisição.",
+      hint: 'Envie um único objeto JSON válido e defina "Content-Type: application/json".',
+    });
+  }
+  return next(err);
+});
 
 const private_key = (process.env.PRIVATE_KEY || "").replace(/\\n/g, "\n");
 const project_id = process.env.PROJECT_ID;
@@ -438,12 +447,7 @@ app.post("/", async (req, res) => {
 
 app.get("/", (req, res) => {
   return res.json({
-    ok: true,
-    message: "FCM Push Server",
-    endpoints: {
-      health: "GET /health",
-      send: "POST /",
-    },
+    servidor: "ativo",
   });
 });
 
