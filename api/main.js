@@ -35,9 +35,11 @@ let cachedToken = null;
 let tokenExpiresAt = 0;
 
 function parseAuthorizationHeader(value) {
-  const v = (value || "").trim();
+  const v = (value || "").trim().replace(/[`'"]/g, "");
   if (!v) return null;
-  if (v.toLowerCase().startsWith("bearer ")) return v.slice(7).trim();
+  if (v.toLowerCase().startsWith("bearer ")) {
+    return v.slice(7).trim().replace(/[`'"]/g, "");
+  }
   return v;
 }
 
@@ -79,6 +81,23 @@ function getSupabaseBaseUrl() {
     );
   }
 }
+
+function getSupabaseHost() {
+  try {
+    return new URL(getSupabaseBaseUrl()).host;
+  } catch (_) {
+    return null;
+  }
+}
+
+app.get("/health", (req, res) => {
+  return res.json({
+    ok: true,
+    project_id: project_id || null,
+    supabase_host: getSupabaseHost(),
+    has_supabase_service_role_key: Boolean(supabase_service_role_key),
+  });
+});
 
 async function getUserIdByRobotId(robotId) {
   const base = getSupabaseBaseUrl();
@@ -287,6 +306,10 @@ app.post("/", async (req, res) => {
           return res.status(404).json({
             error:
               "Robot ID não encontrado. Verifique se o app já salvou o robot_id e registrou o token no Supabase.",
+            debug: {
+              supabase_host: getSupabaseHost(),
+              robot_id: auth,
+            },
           });
         }
         const tokens = await getFcmTokensByUserId(userId);
