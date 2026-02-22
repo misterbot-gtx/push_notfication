@@ -102,7 +102,7 @@ app.get("/health", (req, res) => {
 async function getUserIdByRobotId(robotId) {
   const base = getSupabaseBaseUrl();
   const url = new URL(`${base}/rest/v1/user_profiles`);
-  url.searchParams.set("select", "id,fcm_token");
+  url.searchParams.set("select", "id");
   url.searchParams.set("robot_id", `eq.${robotId}`);
   url.searchParams.set("limit", "1");
 
@@ -113,7 +113,7 @@ async function getUserIdByRobotId(robotId) {
   const rows = await r.json();
   const fromProfiles = rows?.[0]?.id ?? null;
   if (fromProfiles) return fromProfiles;
-  return await getUserIdByRobotIdFromTokens(robotId);
+  return null;
 }
 
 async function getProfileTokenByRobotId(robotId) {
@@ -134,65 +134,18 @@ async function getProfileTokenByRobotId(robotId) {
   return token || null;
 }
 
-async function getUserIdByRobotIdFromTokens(robotId) {
+async function clearProfileTokenByRobotId(robotId) {
   const base = getSupabaseBaseUrl();
-  const url = new URL(`${base}/rest/v1/user_push_tokens`);
-  url.searchParams.set("select", "user_id");
+  const url = new URL(`${base}/rest/v1/user_profiles`);
   url.searchParams.set("robot_id", `eq.${robotId}`);
-  url.searchParams.set("limit", "1");
-
-  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
-  if (!r.ok) {
-    throw new Error(
-      `Erro ao buscar robot_id (tokens) no Supabase: ${await r.text()}`
-    );
-  }
-  const rows = await r.json();
-  return rows?.[0]?.user_id ?? null;
-}
-
-async function getFcmTokensByUserId(userId) {
-  const base = getSupabaseBaseUrl();
-  const url = new URL(`${base}/rest/v1/user_push_tokens`);
-  url.searchParams.set("select", "fcm_token");
-  url.searchParams.set("user_id", `eq.${userId}`);
-
-  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
-  if (!r.ok) {
-    throw new Error(`Erro ao buscar tokens no Supabase: ${await r.text()}`);
-  }
-  const rows = await r.json();
-  return (rows || [])
-    .map((x) => (x?.fcm_token || "").trim())
-    .filter(Boolean);
-}
-
-async function getFcmTokensByRobotId(robotId) {
-  const base = getSupabaseBaseUrl();
-  const url = new URL(`${base}/rest/v1/user_push_tokens`);
-  url.searchParams.set("select", "fcm_token");
-  url.searchParams.set("robot_id", `eq.${robotId}`);
-
-  const r = await fetch(url.toString(), { headers: supabaseHeaders() });
-  if (!r.ok) {
-    throw new Error(
-      `Erro ao buscar tokens por robot_id no Supabase: ${await r.text()}`
-    );
-  }
-  const rows = await r.json();
-  return (rows || [])
-    .map((x) => (x?.fcm_token || "").trim())
-    .filter(Boolean);
-}
-
-async function deleteFcmToken(token) {
-  const base = getSupabaseBaseUrl();
-  const url = new URL(`${base}/rest/v1/user_push_tokens`);
-  url.searchParams.set("fcm_token", `eq.${token}`);
 
   await fetch(url.toString(), {
-    method: "DELETE",
+    method: "PATCH",
     headers: supabaseHeaders(),
+    body: JSON.stringify({
+      fcm_token: null,
+      fcm_last_seen_at: null,
+    }),
   });
 }
 
@@ -320,34 +273,18 @@ app.post("/", async (req, res) => {
         targetTokens.push(profileToken);
       }
 
-      const tokensByRobotId = await getFcmTokensByRobotId(auth);
-      if (tokensByRobotId.length) {
-        targetTokens.push(...tokensByRobotId);
-      }
-
-      const unique = Array.from(new Set(targetTokens));
-      targetTokens.length = 0;
-      targetTokens.push(...unique);
-
       if (!targetTokens.length) {
         const userId = await getUserIdByRobotId(auth);
-        if (!userId) {
-          return res.status(404).json({
-            error:
-              "Robot ID não encontrado. Verifique se o app já salvou o robot_id e registrou o token no Supabase.",
-            debug: {
-              supabase_host: getSupabaseHost(),
-              robot_id: auth,
-            },
-          });
-        }
-        const tokens = await getFcmTokensByUserId(userId);
-        if (!tokens.length) {
-          return res
-            .status(404)
-            .json({ error: "Nenhum token registrado para este usuário." });
-        }
-        targetTokens.push(...tokens);
+        return res.status(404).json({
+          error:
+            userId == null
+              ? "Robot ID não encontrado. Verifique se o robot_id existe no user_profiles."
+              : "Nenhum token registrado para este usuário.",
+          debug: {
+            supabase_host: getSupabaseHost(),
+            robot_id: auth,
+          },
+        });
       }
     } else {
       targetTokens.push(auth);
@@ -377,9 +314,11 @@ app.post("/", async (req, res) => {
 
         const text = await r.text();
         if (!r.ok && isUnregisteredFcmError(text)) {
-          try {
-            await deleteFcmToken(token);
-          } catch (_) {}
+          if (isRobotId(auth)) {
+            try {
+              await clearProfileTokenByRobotId(auth);
+            } catch (_) {}
+          }
         }
 
         return {
