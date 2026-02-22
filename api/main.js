@@ -2,8 +2,21 @@ import express from "express";
 import fetch from "node-fetch";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envServerPath = path.join(__dirname, ".env.server");
+const envDefaultPath = path.join(__dirname, ".env");
+dotenv.config({
+  path: process.env.DOTENV_CONFIG_PATH
+    ? process.env.DOTENV_CONFIG_PATH
+    : fs.existsSync(envServerPath)
+      ? envServerPath
+      : envDefaultPath,
+});
 
 const app = express();
 app.use(express.json());
