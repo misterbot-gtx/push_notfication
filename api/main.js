@@ -436,7 +436,22 @@ app.post("/", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta http://localhost:${PORT}`);
+app.get("/", (req, res) => {
+  return res.json({
+    ok: true,
+    message: "FCM Push Server",
+    endpoints: {
+      health: "GET /health",
+      send: "POST /",
+    },
+  });
 });
+
+const PORT = process.env.PORT || 3000;
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta http://localhost:${PORT}`);
+  });
+}
+
+export default app;
